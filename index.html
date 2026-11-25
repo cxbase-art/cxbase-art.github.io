@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Kehadiran Syarikat & Walk-In</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- SheetJS (Excel) -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <!-- Canvas Confetti -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <style>
+        @keyframes pulse-btn {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
+            50% { transform: scale(1.03); box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }
+        }
+        .animate-pulse-green { animation: pulse-btn 2s infinite; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fadeIn { animation: fadeIn 0.25s ease-out forwards; }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-800 font-sans pb-12">
+
+    <!-- Header -->
+    <header class="bg-indigo-900 text-white shadow-lg py-6 px-4">
+        <div class="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+            <div>
+                <h1 class="text-2xl md:text-3xl font-bold flex items-center gap-3">
+                    <i class="fa-solid fa-building-user text-indigo-400"></i>
+                    Sistem Kehadiran Syarikat
+                </h1>
+                <p class="text-indigo-200 text-sm mt-1">Semakan kehadiran program & pendaftaran Walk-In</p>
+            </div>
+            <div class="flex flex-wrap gap-2 items-center">
+                <!-- Butang Walk-in -->
+                <button onclick="openWalkInModal()" class="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg font-semibold shadow-md flex items-center gap-2 transition">
+                    <i class="fa-solid fa-user-plus"></i> + Walk-In
+                </button>
+
+                <!-- Butang Admin Auth Toggle -->
+                <button id="adminAuthBtn" onclick="toggleAdminAuth()" title="Akses Admin" class="bg-indigo-800 hover:bg-indigo-700 text-amber-400 border border-indigo-600 w-10 h-10 rounded-lg font-semibold shadow-md flex items-center justify-center transition">
+                    <i id="adminIcon" class="fa-solid fa-lock text-base"></i>
+                </button>
+                
+                <!-- Butang Import Excel (Mod Admin) -->
+                <button id="importBtn" onclick="triggerImportProtected()" class="hidden bg-amber-500 hover:bg-amber-600 text-white px-3 py-2 rounded-lg font-semibold shadow-md text-sm flex items-center gap-2 transition animate-fadeIn">
+                    <i class="fa-solid fa-file-import"></i> Import Excel
+                </button>
+                <input type="file" id="excelFileInput" accept=".xlsx, .xls, .csv" class="hidden" onchange="importExcel(event)">
+
+                <!-- Butang Export Excel (Mod Admin) -->
+                <button id="exportBtn" onclick="triggerExportProtected()" class="hidden bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg font-semibold shadow-md text-sm flex items-center gap-2 transition animate-fadeIn">
+                    <i class="fa-solid fa-file-export"></i> Eksport Excel
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="max-w-6xl mx-auto px-4 mt-6">
+
+        <!-- Stat Cards (Diperlihatkan apabila Mod Admin Aktif) -->
+        <div id="adminStatsSection" class="hidden grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6 transition-all duration-300">
+            <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+                <div>
+                    <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Jumlah Syarikat</p>
+                    <h3 id="statTotal" class="text-3xl font-extrabold text-slate-800">0</h3>
+                </div>
+                <div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center text-xl">
+                    <i class="fa-solid fa-building"></i>
+                </div>
+            </div>
+            <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+                <div>
+                    <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Telah Hadir</p>
+                    <h3 id="statHadir" class="text-3xl font-extrabold text-emerald-600">0</h3>
+                </div>
+                <div class="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center text-xl">
+                    <i class="fa-solid fa-circle-check"></i>
+                </div>
+            </div>
+            <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+                <div>
+                    <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Belum Hadir</p>
+                    <h3 id="statBelum" class="text-3xl font-extrabold text-rose-500">0</h3>
+                </div>
+                <div class="w-12 h-12 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center text-xl">
+                    <i class="fa-solid fa-clock"></i>
+                </div>
+            </div>
+        </div>
+
+        <!-- Search & Filter Bar -->
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-6 flex flex-col md:flex-row gap-4 items-center justify-between">
+            <div class="relative w-full md:w-96">
+                <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                <input type="text" id="searchInput" oninput="filterCompanies()" placeholder="Cari nama syarikat atau wakil..." class="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            </div>
+            <!-- TAB PENAPIS (DISOROKKAN SECARA LALAI, HANYA MUNCUL APABILA ADMIN AKTIF) -->
+            <div id="filterTabContainer" class="hidden flex gap-2 w-full md:w-auto overflow-x-auto transition-all duration-300">
+                <button onclick="setTab('semua')" id="tabSemua" class="px-4 py-2 rounded-lg font-medium text-sm transition bg-indigo-600 text-white">Semua</button>
+                <button onclick="setTab('hadir')" id="tabHadir" class="px-4 py-2 rounded-lg font-medium text-sm transition bg-slate-100 text-slate-600 hover:bg-slate-200">Hadir</button>
+                <button onclick="setTab('belum')" id="tabBelum" class="px-4 py-2 rounded-lg font-medium text-sm transition bg-slate-100 text-slate-600 hover:bg-slate-200">Belum Hadir</button>
+            </div>
+        </div>
+
+        <!-- List Section -->
+        <div id="companyList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <!-- Dynamically populated list -->
+        </div>
+
+        <div id="emptyState" class="hidden text-center py-12 bg-white rounded-xl border border-dashed border-slate-300">
+            <i class="fa-solid fa-folder-open text-4xl text-slate-300 mb-3"></i>
+            <p class="text-slate-500 font-medium">Tiada syarikat dijumpai</p>
+        </div>
+    </main>
+
+    <!-- Modal Admin Password Lock -->
+    <div id="adminAuthModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 text-center animate-fadeIn">
+            <div class="w-14 h-14 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center text-2xl mx-auto mb-3">
+                <i class="fa-solid fa-user-shield"></i>
+            </div>
+            <h3 class="text-lg font-bold text-slate-800 mb-1">Pengesahan Admin</h3>
+            <p class="text-xs text-slate-500 mb-4">Masukkan kata laluan admin untuk mengaktifkan mod admin.</p>
+            
+            <form onsubmit="handleAdminAuth(event)" class="space-y-4">
+                <div>
+                    <input type="password" id="adminPasswordInput" required placeholder="Kata Laluan Admin" class="w-full text-center px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    <p id="authErrorMsg" class="text-rose-500 text-xs mt-1 hidden font-semibold">Kata laluan tidak tepat!</p>
+                </div>
+                <div class="flex gap-3">
+                    <button type="button" onclick="closeAdminAuthModal()" class="flex-1 py-2 rounded-lg border border-slate-300 text-slate-600 font-semibold hover:bg-slate-50">Batal</button>
+                    <button type="submit" class="flex-1 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold shadow-md">Log Masuk</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal Notification / Alert Box -->
+    <div id="customAlertModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 text-center animate-fadeIn">
+            <div id="alertIconContainer" class="w-14 h-14 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center text-2xl mx-auto mb-3">
+                <i id="alertIcon" class="fa-solid fa-circle-info"></i>
+            </div>
+            <h3 id="alertTitle" class="text-lg font-bold text-slate-800 mb-1">Notifikasi</h3>
+            <p id="alertMessage" class="text-sm text-slate-600 mb-5"></p>
+            <button onclick="closeCustomAlert()" class="w-full py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold shadow-md">Faham</button>
+        </div>
+    </div>
+
+    <!-- Modal Pengesahan Hadir -->
+    <div id="confirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 text-center animate-fadeIn">
+            <div class="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center text-2xl mx-auto mb-4">
+                <i class="fa-solid fa-user-check"></i>
+            </div>
+            <h3 class="text-lg font-bold text-slate-800 mb-2">Pengesahan Kehadiran</h3>
+            <p class="text-sm text-slate-600 mb-1">Adakah anda pasti mahu mengubah status kehadiran untuk syarikat:</p>
+            <p id="confirmCompanyName" class="font-extrabold text-indigo-900 text-base my-2 p-2 bg-indigo-50 rounded-lg border border-indigo-100"></p>
+            
+            <div class="flex gap-3 mt-5">
+                <button onclick="closeConfirmModal()" class="flex-1 py-2 rounded-lg border border-slate-300 text-slate-600 font-semibold hover:bg-slate-50">Batal</button>
+                <button id="btnExecuteConfirm" onclick="executeHadirAction()" class="flex-1 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-md">Ya, Sahkan</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Walk-In -->
+    <div id="walkInModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 relative animate-fadeIn">
+            <button onclick="closeWalkInModal()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 text-lg">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+            <h2 class="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
+                <i class="fa-solid fa-user-plus text-emerald-600"></i> Pendaftaran Walk-In
+            </h2>
+            <form id="walkInForm" onsubmit="handleWalkInSubmit(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Nama Syarikat *</label>
+                    <input type="text" id="winNamaSyarikat" required placeholder="Contoh: Maju Jaya Sdn Bhd" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Nama Wakil</label>
+                    <input type="text" id="winNamaWakil" placeholder="Contoh: Ahmad Razali" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Nombor Telefon</label>
+                    <input type="tel" id="winTelefon" placeholder="Contoh: 012-3456789" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Kategori</label>
+                    <select id="winKategori" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                        <option value="SME">SME / PKS</option>
+                        <option value="Korporat">Korporat</option>
+                        <option value="Agensi Kerajaan">Agensi Kerajaan</option>
+                        <option value="Lain-lain">Lain-lain</option>
+                    </select>
+                </div>
+                <div class="pt-2 flex gap-3">
+                    <button type="button" onclick="closeWalkInModal()" class="flex-1 py-2 rounded-lg border border-slate-300 text-slate-600 font-semibold hover:bg-slate-50">Batal</button>
+                    <button type="submit" class="flex-1 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-md">Simpan & Tanda Hadir</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- JavaScript Application Logic -->
+    <script>
+        const ADMIN_PASSWORD = "admin123";
+        let isAdminAuthenticated = false;
+
+        let companies = [
+            { id: 1, nama: "Perniagaan Mutiara Sdn Bhd", wakil: "Encik Azman", telefon: "019-1234567", kategori: "SME", hadir: false, masa: null, walkin: false },
+            { id: 2, nama: "Teknologi Jaya Enterprise", wakil: "Puan Siti", telefon: "012-9876543", kategori: "Korporat", hadir: false, masa: null, walkin: false },
+            { id: 3, nama: "Katering Selera Kampung", wakil: "Encik Bakar", telefon: "017-5554321", kategori: "SME", hadir: false, masa: null, walkin: false }
+        ];
+
+        let currentTab = 'semua';
+        let selectedCompanyIdForConfirm = null;
+
+        window.onload = () => {
+            const saved = localStorage.getItem('companyAttendanceData');
+            if (saved) {
+                try { companies = JSON.parse(saved); } catch(e){}
+            }
+            renderList();
+            updateAdminUI();
+        };
+
+        function saveData() {
+            localStorage.setItem('companyAttendanceData', JSON.stringify(companies));
+        }
+
+        function showAlert(title, message, iconClass = "fa-circle-info", iconBg = "bg-indigo-100", iconColor = "text-indigo-600") {
+            document.getElementById('alertTitle').innerText = title;
+            document.getElementById('alertMessage').innerText = message;
+            
+            const container = document.getElementById('alertIconContainer');
+            container.className = `w-14 h-14 ${iconBg} ${iconColor} rounded-full flex items-center justify-center text-2xl mx-auto mb-3`;
+            document.getElementById('alertIcon').className = `fa-solid ${iconClass}`;
+            
+            const modal = document.getElementById('customAlertModal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        function closeCustomAlert() {
+            const modal = document.getElementById('customAlertModal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        function renderList() {
+            const listEl = document.getElementById('companyList');
+            const emptyEl = document.getElementById('emptyState');
+            const searchVal = document.getElementById('searchInput').value.toLowerCase();
+
+            listEl.innerHTML = '';
+
+            let filtered = companies.filter(c => {
+                const matchSearch = c.nama.toLowerCase().includes(searchVal) || (c.wakil && c.wakil.toLowerCase().includes(searchVal));
+                if (currentTab === 'hadir') return matchSearch && c.hadir;
+                if (currentTab === 'belum') return matchSearch && !c.hadir;
+                return matchSearch;
+            });
+
+            updateStats();
+
+            if (filtered.length === 0) {
+                emptyEl.classList.remove('hidden');
+                return;
+            } else {
+                emptyEl.classList.add('hidden');
+            }
+
+            filtered.forEach(c => {
+                const card = document.createElement('div');
+                card.className = `bg-white p-5 rounded-xl border transition-all shadow-sm ${c.hadir ? 'border-emerald-300 bg-emerald-50/20' : 'border-slate-200'}`;
+                
+                card.innerHTML = `
+                    <div class="flex justify-between items-start mb-3">
+                        <div>
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <h4 class="font-bold text-slate-800 text-lg leading-snug">${c.nama}</h4>
+                                ${c.walkin ? '<span class="bg-amber-100 text-amber-700 text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase">Walk-in</span>' : ''}
+                            </div>
+                            <p class="text-xs text-slate-500 mt-1"><i class="fa-solid fa-user text-slate-400 mr-1"></i> ${c.wakil || 'Tiada Wakil'}</p>
+                            ${c.telefon ? `<p class="text-xs text-slate-500"><i class="fa-solid fa-phone text-slate-400 mr-1"></i> ${c.telefon}</p>` : ''}
+                        </div>
+                    </div>
+                    <div class="mt-4 pt-3 border-t border-slate-100 flex justify-between items-center">
+                        ${c.hadir ? `
+                            <div class="flex items-center gap-2 w-full justify-between">
+                                <span class="bg-emerald-100 text-emerald-800 font-bold text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+                                    <i class="fa-solid fa-circle-check text-emerald-600"></i> HADIR (${c.masa})
+                                </span>
+                                <button onclick="promptHadir(${c.id})" class="text-slate-400 hover:text-rose-500 text-xs px-2 py-1" title="Batal / Ubah Status">
+                                    <i class="fa-solid fa-rotate-left"></i> Batal
+                                </button>
+                            </div>
+                        ` : `
+                            <button onclick="promptHadir(${c.id})" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm py-2 px-4 rounded-lg shadow-md animate-pulse-green flex items-center justify-center gap-2 transition">
+                                <i class="fa-solid fa-check"></i> TANDA HADIR
+                            </button>
+                        `}
+                    </div>
+                `;
+                listEl.appendChild(card);
+            });
+        }
+
+        // Mod Admin Activation & UI Adjustments
+        function toggleAdminAuth() {
+            if (isAdminAuthenticated) {
+                isAdminAuthenticated = false;
+                setTab('semua');
+                updateAdminUI();
+                showAlert('Mod Admin Ditutup', 'Anda telah keluar dari mod pentadbir.', 'fa-lock', 'bg-slate-100', 'text-slate-600');
+            } else {
+                openAdminAuthModal();
+            }
+        }
+
+        function updateAdminUI() {
+            const btn = document.getElementById('adminAuthBtn');
+            const icon = document.getElementById('adminIcon');
+            const importBtn = document.getElementById('importBtn');
+            const exportBtn = document.getElementById('exportBtn');
+            const adminStatsSection = document.getElementById('adminStatsSection');
+            const filterTabContainer = document.getElementById('filterTabContainer');
+
+            if (isAdminAuthenticated) {
+                btn.className = "bg-emerald-700 hover:bg-emerald-600 text-white border border-emerald-500 w-10 h-10 rounded-lg font-semibold shadow-md flex items-center justify-center transition";
+                btn.title = "Log Keluar Admin";
+                icon.className = "fa-solid fa-unlock text-emerald-200 text-base";
+                
+                importBtn.classList.remove('hidden');
+                exportBtn.classList.remove('hidden');
+                adminStatsSection.classList.remove('hidden');
+                filterTabContainer.classList.remove('hidden');
+            } else {
+                btn.className = "bg-indigo-800 hover:bg-indigo-700 text-amber-400 border border-indigo-600 w-10 h-10 rounded-lg font-semibold shadow-md flex items-center justify-center transition";
+                btn.title = "Akses Admin";
+                icon.className = "fa-solid fa-lock text-base";
+                
+                importBtn.classList.add('hidden');
+                exportBtn.classList.add('hidden');
+                adminStatsSection.classList.add('hidden');
+                filterTabContainer.classList.add('hidden');
+            }
+        }
+
+        function triggerImportProtected() {
+            if (isAdminAuthenticated) {
+                document.getElementById('excelFileInput').click();
+            }
+        }
+
+        function triggerExportProtected() {
+            if (isAdminAuthenticated) {
+                exportExcel();
+            }
+        }
+
+        function openAdminAuthModal() {
+            document.getElementById('adminPasswordInput').value = '';
+            document.getElementById('authErrorMsg').classList.add('hidden');
+            const modal = document.getElementById('adminAuthModal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            setTimeout(() => document.getElementById('adminPasswordInput').focus(), 100);
+        }
+
+        function closeAdminAuthModal() {
+            const modal = document.getElementById('adminAuthModal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        function handleAdminAuth(e) {
+            e.preventDefault();
+            const inputPass = document.getElementById('adminPasswordInput').value;
+            if (inputPass === ADMIN_PASSWORD) {
+                isAdminAuthenticated = true;
+                updateAdminUI();
+                closeAdminAuthModal();
+                showAlert('Berjaya', 'Mod Admin telah diaktifkan.', 'fa-circle-check', 'bg-emerald-100', 'text-emerald-600');
+            } else {
+                document.getElementById('authErrorMsg').classList.remove('hidden');
+            }
+        }
+
+        function promptHadir(id) {
+            const comp = companies.find(c => c.id === id);
+            if (!comp) return;
+
+            selectedCompanyIdForConfirm = id;
+            document.getElementById('confirmCompanyName').innerText = comp.nama;
+
+            const modal = document.getElementById('confirmModal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        function closeConfirmModal() {
+            selectedCompanyIdForConfirm = null;
+            const modal = document.getElementById('confirmModal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        function executeHadirAction() {
+            if (!selectedCompanyIdForConfirm) return;
+            
+            const comp = companies.find(c => c.id === selectedCompanyIdForConfirm);
+            if (comp) {
+                comp.hadir = !comp.hadir;
+                if (comp.hadir) {
+                    const now = new Date();
+                    comp.masa = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    confetti({ particleCount: 70, spread: 60, origin: { y: 0.7 } });
+                } else {
+                    comp.masa = null;
+                }
+                saveData();
+                renderList();
+            }
+            closeConfirmModal();
+        }
+
+        function updateStats() {
+            document.getElementById('statTotal').innerText = companies.length;
+            document.getElementById('statHadir').innerText = companies.filter(c => c.hadir).length;
+            document.getElementById('statBelum').innerText = companies.filter(c => !c.hadir).length;
+        }
+
+        function filterCompanies() { renderList(); }
+
+        function setTab(tab) {
+            currentTab = tab;
+            ['Semua', 'Hadir', 'Belum'].forEach(t => {
+                const btn = document.getElementById(`tab${t}`);
+                if (btn) {
+                    if (t.toLowerCase() === tab) {
+                        btn.className = "px-4 py-2 rounded-lg font-medium text-sm transition bg-indigo-600 text-white";
+                    } else {
+                        btn.className = "px-4 py-2 rounded-lg font-medium text-sm transition bg-slate-100 text-slate-600 hover:bg-slate-200";
+                    }
+                }
+            });
+            renderList();
+        }
+
+        function openWalkInModal() { 
+            document.getElementById('walkInModal').classList.remove('hidden'); 
+            document.getElementById('walkInModal').classList.add('flex'); 
+        }
+        
+        function closeWalkInModal() { 
+            document.getElementById('walkInModal').classList.add('hidden'); 
+            document.getElementById('walkInModal').classList.remove('flex'); 
+        }
+
+        function handleWalkInSubmit(e) {
+            e.preventDefault();
+            const now = new Date();
+            const newComp = {
+                id: Date.now(),
+                nama: document.getElementById('winNamaSyarikat').value.trim(),
+                wakil: document.getElementById('winNamaWakil').value.trim(),
+                telefon: document.getElementById('winTelefon').value.trim(),
+                kategori: document.getElementById('winKategori').value,
+                hadir: true,
+                masa: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                walkin: true
+            };
+            companies.unshift(newComp);
+            saveData();
+            document.getElementById('walkInForm').reset();
+            closeWalkInModal();
+            renderList();
+            confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+        }
+
+        function importExcel(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                try {
+                    const bstr = evt.target.result;
+                    const wb = XLSX.read(bstr, { type: 'binary' });
+                    const wsname = wb.SheetNames[0];
+                    const data = XLSX.utils.sheet_to_json(wb.Sheets[wsname]);
+                    
+                    if (data.length > 0) {
+                        companies = data.map((row, idx) => ({
+                            id: Date.now() + idx,
+                            nama: row['Nama Syarikat'] || row['Nama'] || row['Syarikat'] || 'Syarikat Tanpa Nama',
+                            wakil: row['Nama Wakil'] || row['Wakil'] || '',
+                            telefon: row['No Telefon'] || row['No Tel'] || row['Telefon'] || '',
+                            kategori: row['Kategori'] || 'SME',
+                            hadir: false,
+                            masa: null,
+                            walkin: false
+                        }));
+                        saveData();
+                        renderList();
+                        showAlert('Import Berjaya', `Berjaya mengimport ${companies.length} buah syarikat!`, 'fa-file-excel', 'bg-emerald-100', 'text-emerald-600');
+                    } else {
+                        showAlert('Ralat Import', 'Fail Excel tidak mengandungi data yang sah.', 'fa-triangle-exclamation', 'bg-amber-100', 'text-amber-600');
+                    }
+                } catch(err) {
+                    showAlert('Ralat Fail', 'Format fail tidak dapat dibaca. Sila muat naik fail Excel yang sah.', 'fa-circle-xmark', 'bg-rose-100', 'text-rose-600');
+                }
+            };
+            reader.readAsBinaryString(file);
+            e.target.value = '';
+        }
+
+        function exportExcel() {
+            if (companies.length === 0) {
+                showAlert('Tiada Data', 'Tiada rekod syarikat untuk dieksport.', 'fa-circle-exclamation', 'bg-amber-100', 'text-amber-600');
+                return;
+            }
+
+            const exportData = companies.map(c => ({
+                'Nama Syarikat': c.nama,
+                'Nama Wakil': c.wakil,
+                'No Telefon': c.telefon,
+                'Kategori': c.kategori,
+                'Status Kehadiran': c.hadir ? 'HADIR' : 'BELUM HADIR',
+                'Masa Hadir': c.masa || '-',
+                'Jenis Pendaftaran': c.walkin ? 'Walk-In' : 'Jemputan'
+            }));
+            const ws = XLSX.utils.json_to_sheet(exportData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Kehadiran Syarikat");
+            XLSX.writeFile(wb, "Senarai_Kehadiran_Syarikat.xlsx");
+        }
+    </script>
+</body>
+</html>
